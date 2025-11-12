@@ -1,128 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>EV Sales Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Chart.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Your stylesheet -->
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <div class="background-gradient"></div>
-  
-  <div class="container">
-    <header>
-      <h1>⚡ EV Sales Analytics</h1>
-      <p class="subtitle">
-        Comprehensive electric vehicle sales data from 
-        <a href="https://github.com/simonkrauter/Open-EV-Charts" target="_blank">Open EV Charts</a>
-      </p>
-    </header>
-
-    <div class="dashboard-grid">
-      <!-- Controls Panel -->
-      <div class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">🌍 Select Regions</h2>
-        </div>
-        
-        <div class="controls-section">
-          <div class="control-group">
-            <div class="control-label">
-              Search Countries
-            </div>
-            <div class="search-box">
-              <input type="text" id="search-countries" placeholder="Search countries...">
-            </div>
-            
-            <div class="quick-actions">
-              <button class="quick-btn" onclick="selectAll()">Select All</button>
-              <button class="quick-btn" onclick="deselectAll()">Deselect All</button>
-              <button class="quick-btn" onclick="selectEU()">EU Countries</button>
-              <button class="quick-btn" onclick="selectTop5()">Top 5 Markets</button>
-            </div>
-            
-            <div class="control-label">
-              Available Countries <span class="badge" id="selected-count">0</span>
-            </div>
-            <div class="country-grid" id="country-list"></div>
-          </div>
-
-          <div class="control-group">
-            <div class="control-label">Chart Settings</div>
-            
-            <div class="chart-options">
-              <div class="option-group">
-                <label class="control-label" style="font-size: 0.75rem;">Chart Type</label>
-                <select id="chart-type">
-                  <option value="line">Line Chart</option>
-                  <option value="bar">Bar Chart</option>
-                  <option value="area">Area Chart</option>
-                </select>
-              </div>
-
-              <div class="option-group">
-                <label class="control-label" style="font-size: 0.75rem;">Scale Type</label>
-                <div class="toggle-group">
-                  <button class="toggle-btn active" onclick="setScale('linear')">Linear</button>
-                  <button class="toggle-btn" onclick="setScale('logarithmic')">Log</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="button-grid">
-              <button id="load-btn">📊 Update Chart</button>
-              <button class="secondary" id="download-csv-btn">💾 Download CSV</button>
-              <button class="secondary" id="download-img-btn">📸 Save Image</button>
-            </div>
-
-            <div id="status" class="status"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Stats Panel -->
-      <div class="panel" id="stats-panel" style="display: none;">
-        <div class="panel-header">
-          <h2 class="panel-title">📈 Key Statistics</h2>
-        </div>
-        <div class="stats-grid" id="stats-grid"></div>
-      </div>
-
-      <!-- Chart Panel -->
-      <div class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title" id="chart-title">📊 EV Sales Over Time</h2>
-        </div>
-        <div class="chart-container">
-          <canvas id="evChart"></canvas>
-        </div>
-        <!-- external, scrollable legend that prevents layout blowups -->
-        <div id="legend" class="legend-scroll"></div>
-      </div>
-
-      <!-- Table Panel -->
-      <div class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">📋 Detailed Data</h2>
-        </div>
-        <div class="table-wrapper">
-          <table id="data-table">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <footer>
-      Built with data from <a href="https://github.com/simonkrauter/Open-EV-Charts" target="_blank">Open EV Charts</a>
-    </footer>
-  </div>
-
-  <!-- Your script (after the DOM) -->
-  <script src="script.js"></script>
-</body>
+	<head>
+		<meta charset="UTF-8" />
+		<title>EV Sales Dashboard</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="background-gradient"></div>
+		<div class="container">
+			<header>
+				<h1>⚡ EV Sales Analytics</h1>
+				<p class="subtitle"> Comprehensive electric vehicle sales data from <a href="https://github.com/simonkrauter/Open-EV-Charts" target="_blank">Open EV Charts</a>
+				</p>
+			</header>
+			<div class="dashboard-grid">
+				<div class="panel">
+					<div class="panel-header">
+						<h2 class="panel-title">🌍 Select Regions</h2>
+					</div>
+					<div class="controls-section">
+						<div class="control-group">
+							<div class="control-label"> Search Countries </div>
+							<div class="search-box">
+								<input type="text" id="search-countries" placeholder="Search countries...">
+							</div>
+							<div class="quick-actions">
+								<button class="quick-btn" onclick="selectAll()">Select All</button>
+								<button class="quick-btn" onclick="deselectAll()">Deselect All</button>
+								<button class="quick-btn" onclick="selectEU()">EU Countries</button>
+								<button class="quick-btn" onclick="selectTop5()">Top 5 Markets</button>
+							</div>
+							<div class="control-label"> Available Countries <span class="badge" id="selected-count">0</span>
+							</div>
+							<div class="country-grid" id="country-list"></div>
+						</div>
+						<div class="control-group">
+							<div class="control-label">Chart Settings</div>
+							<div class="chart-options">
+								<div class="option-group">
+									<label class="control-label" style="font-size: 0.75rem;">Chart Type</label>
+									<select id="chart-type">
+										<option value="line">Line Chart</option>
+										<option value="bar">Bar Chart</option>
+										<option value="area">Area Chart</option>
+									</select>
+								</div>
+								<div class="option-group">
+									<label class="control-label" style="font-size: 0.75rem;">Scale Type</label>
+									<div class="toggle-group">
+										<button class="toggle-btn active" onclick="setScale('linear')">Linear</button>
+										<button class="toggle-btn" onclick="setScale('logarithmic')">Log</button>
+									</div>
+								</div>
+								<div class="option-group">
+									<label class="control-label" style="font-size: 0.75rem;">Time Frame (Years)</label>
+									<div class="year-range">
+										<select id="year-start"></select>
+										<span class="year-sep">to</span>
+										<select id="year-end"></select>
+									</div>
+									<small class="hint">Only whole years are allowed.</small>
+								</div>
+							</div>
+							<div class="button-grid">
+								<button id="load-btn">📊 Update Chart</button>
+								<button class="secondary" id="download-csv-btn">💾 Download CSV</button>
+								<button class="secondary" id="download-img-btn">📸 Save Image</button>
+							</div>
+							<div id="status" class="status"></div>
+						</div>
+					</div>
+				</div>
+				<div class="panel" id="stats-panel" style="display: none;">
+					<div class="panel-header">
+						<h2 class="panel-title">📈 Key Statistics</h2>
+					</div>
+					<div class="stats-grid" id="stats-grid"></div>
+				</div>
+				<div class="panel">
+					<div class="panel-header">
+						<h2 class="panel-title" id="chart-title">📊 EV Sales Over Time</h2>
+					</div>
+					<div class="chart-container">
+						<canvas id="evChart"></canvas>
+					</div>
+					<div id="legend" class="legend-scroll"></div>
+				</div>
+				<div class="panel">
+					<div class="panel-header">
+						<h2 class="panel-title">📋 Detailed Data</h2>
+					</div>
+					<div class="table-wrapper">
+						<table id="data-table">
+							<thead></thead>
+							<tbody></tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+			<footer> Built with data from <a href="https://github.com/simonkrauter/Open-EV-Charts" target="_blank">Open EV Charts</a>
+			</footer>
+		</div>
+		<script src="script.js"></script>
+	</body>
 </html>

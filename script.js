@@ -30,10 +30,12 @@ const COUNTRY_OPTIONS = [
 ];
 
 let chartInstance = null;
-let currentPivot = null;
+let currentPivot = null;           // full pivot (all years)
 let currentSelectedCodes = [];
 let currentChartType = 'line';
 let currentScaleType = 'linear';
+let yearStart = null;              // numeric year or null
+let yearEnd = null;                // numeric year or null
 
 document.addEventListener("DOMContentLoaded", () => {
   renderCountryCheckboxes();
@@ -51,6 +53,22 @@ function setupEventListeners() {
     currentChartType = e.target.value;
     if (currentPivot) updateChartDisplay();
   });
+
+  // Timeframe listeners (populated after data load)
+  const ys = document.getElementById("year-start");
+  const ye = document.getElementById("year-end");
+  if (ys && ye) {
+    ys.addEventListener("change", () => {
+      yearStart = parseInt(ys.value, 10);
+      enforceYearOrder();
+      refreshFilteredViews();
+    });
+    ye.addEventListener("change", () => {
+      yearEnd = parseInt(ye.value, 10);
+      enforceYearOrder();
+      refreshFilteredViews();
+    });
+  }
 }
 
 function renderCountryCheckboxes() {
@@ -80,11 +98,7 @@ function renderCountryCheckboxes() {
 function filterCountries(e) {
   const search = e.target.value.toLowerCase();
   const chips = document.querySelectorAll(".country-chip");
-  
-  chips.forEach(chip => {
-    const name = chip.dataset.name;
-    chip.style.display = name.includes(search) ? "flex" : "none";
-  });
+  chips.forEach(chip => chip.style.display = chip.dataset.name.includes(search) ? "flex" : "none");
 }
 
 function updateSelectedCount() {
@@ -104,17 +118,13 @@ function deselectAll() {
 
 function selectEU() {
   const euCodes = ["EU", "AT", "BE", "DE", "DK", "ES", "FI", "FR", "IE", "IT", "NL", "PL", "PT", "SE"];
-  document.querySelectorAll("#country-list input").forEach(cb => {
-    cb.checked = euCodes.includes(cb.value);
-  });
+  document.querySelectorAll("#country-list input").forEach(cb => cb.checked = euCodes.includes(cb.value));
   updateSelectedCount();
 }
 
 function selectTop5() {
   const top5 = ["CN", "US", "DE", "NO", "UK"];
-  document.querySelectorAll("#country-list input").forEach(cb => {
-    cb.checked = top5.includes(cb.value);
-  });
+  document.querySelectorAll("#country-list input").forEach(cb => cb.checked = top5.includes(cb.value));
   updateSelectedCount();
 }
 
@@ -127,9 +137,7 @@ function setScale(type) {
 }
 
 function setInitialSelection(codes) {
-  document.querySelectorAll("#country-list input").forEach(cb => {
-    cb.checked = codes.includes(cb.value);
-  });
+  document.querySelectorAll("#country-list input").forEach(cb => { cb.checked = codes.includes(cb.value); });
   updateSelectedCount();
 }
 
@@ -155,14 +163,17 @@ async function handleUpdateChart() {
       })
     );
 
-    const pivot = buildPivot(datasets);
+    const pivot = buildPivot(datasets); // full dataset
     currentPivot = pivot;
 
-    updateChartDisplay();
-    updateTable(pivot, selectedCodes);
-    updateStats(pivot, selectedCodes);
+    // Initialize years dropdowns from available years
+    const years = getAvailableYears(currentPivot);
+    populateYearDropdowns(years);
 
-    const periods = Object.keys(pivot).length;
+    // Render filtered views
+    refreshFilteredViews();
+
+    const periods = Object.keys(getActivePivot()).length;
     showStatus(`✓ Loaded ${periods} periods for ${selectedCodes.length} region(s)`, false);
   } catch (err) {
     console.error(err);
@@ -172,11 +183,82 @@ async function handleUpdateChart() {
   }
 }
 
+/* -------------------- Year filtering helpers -------------------- */
+function getAvailableYears(pivot) {
+  const years = new Set();
+  Object.keys(pivot).forEach(period => {
+    const y = parseInt(period.slice(0, 4), 10);
+    if (!isNaN(y)) years.add(y);
+  });
+  return Array.from(years).sort((a, b) => a - b);
+}
+
+function populateYearDropdowns(years) {
+  const ys = document.getElementById("year-start");
+  const ye = document.getElementById("year-end");
+  if (!ys || !ye || years.length === 0) return;
+
+  ys.innerHTML = "";
+  ye.innerHTML = "";
+
+  years.forEach(y => {
+    const o1 = document.createElement("option");
+    o1.value = String(y);
+    o1.textContent = y;
+    ys.appendChild(o1);
+
+    const o2 = document.createElement("option");
+    o2.value = String(y);
+    o2.textContent = y;
+    ye.appendChild(o2);
+  });
+
+  // defaults to full range
+  yearStart = years[0];
+  yearEnd = years[years.length - 1];
+  ys.value = String(yearStart);
+  ye.value = String(yearEnd);
+}
+
+function enforceYearOrder() {
+  // ensure start <= end by swapping if needed
+  if (yearStart != null && yearEnd != null && yearStart > yearEnd) {
+    [yearStart, yearEnd] = [yearEnd, yearStart];
+    document.getElementById("year-start").value = String(yearStart);
+    document.getElementById("year-end").value = String(yearEnd);
+  }
+}
+
+function filterPivotByYearRange(pivot, yStart, yEnd) {
+  if (yStart == null || yEnd == null) return pivot;
+  const filtered = {};
+  Object.keys(pivot).forEach(period => {
+    const y = parseInt(period.slice(0, 4), 10);
+    if (!isNaN(y) && y >= yStart && y <= yEnd) {
+      filtered[period] = pivot[period];
+    }
+  });
+  return filtered;
+}
+
+function getActivePivot() {
+  if (!currentPivot) return {};
+  return filterPivotByYearRange(currentPivot, yearStart, yearEnd);
+}
+
+function refreshFilteredViews() {
+  updateChartDisplay();
+  updateTable(getActivePivot(), currentSelectedCodes);
+  updateStats(getActivePivot(), currentSelectedCodes);
+}
+/* ---------------------------------------------------------------- */
+
 function updateChartDisplay() {
-  const periods = Object.keys(currentPivot).sort((a, b) => a.localeCompare(b));
+  const activePivot = getActivePivot();
+  const periods = Object.keys(activePivot).sort((a, b) => a.localeCompare(b));
   const datasetsForChart = currentSelectedCodes.map((code) => {
     const label = getCountryName(code);
-    const data = periods.map((p) => currentPivot[p][code] ?? null);
+    const data = periods.map((p) => activePivot[p][code] ?? null);
     return { label, data, borderWidth: 2, tension: 0.3, pointRadius: 0 };
   });
 
@@ -205,7 +287,7 @@ function updateChart(labels, datasets) {
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { display: false }, // ✅ hide default legend
+        legend: { display: false }, // external legend is rendered below
         tooltip: {
           backgroundColor: "rgba(15, 23, 42, 0.95)",
           titleColor: "#e5e7eb",
@@ -222,15 +304,8 @@ function updateChart(labels, datasets) {
         }
       },
       scales: {
-        x: {
-          ticks: { color: "#9ca3af", maxRotation: 45, minRotation: 30 },
-          grid: { color: "#1f2937" }
-        },
-        y: {
-          type: currentScaleType,
-          ticks: { color: "#9ca3af" },
-          grid: { color: "#1f2937" }
-        }
+        x: { ticks: { color: "#9ca3af", maxRotation: 45, minRotation: 30 }, grid: { color: "#1f2937" } },
+        y: { type: currentScaleType, ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } }
       }
     }
   };
@@ -241,7 +316,8 @@ function updateChart(labels, datasets) {
   renderLegend(chartInstance);
 
   const names = currentSelectedCodes.map(getCountryName).join(", ");
-  document.getElementById("chart-title").textContent = `📊 EV Sales Over Time — ${names}`;
+  const yr = yearStart && yearEnd ? ` — ${yearStart} to ${yearEnd}` : "";
+  document.getElementById("chart-title").textContent = `📊 EV Sales Over Time — ${names}${yr}`;
 }
 
 function renderLegend(chart) {
@@ -284,6 +360,10 @@ function updateStats(pivot, selectedCodes) {
   statsGrid.innerHTML = "";
 
   const periods = Object.keys(pivot).sort((a, b) => a.localeCompare(b));
+  if (periods.length === 0) {
+    statsPanel.style.display = "none";
+    return;
+  }
   const latestPeriod = periods[periods.length - 1];
 
   let totalLatest = 0;
@@ -309,7 +389,7 @@ function updateStats(pivot, selectedCodes) {
   const stats = [
     { label: "Latest Period", value: latestPeriod },
     { label: "Total Sales (Latest)", value: totalLatest.toLocaleString() },
-    { label: "Top Market", value: maxCountry.name },
+    { label: "Top Market", value: maxCountry.name || "—" },
     { label: "Total Periods", value: periods.length }
   ];
 
@@ -365,29 +445,39 @@ function updateTable(pivot, selectedCodes) {
   });
 }
 
+/* -------------------- Data fetching + parsing -------------------- */
+// Utility: escape text for use inside new RegExp(string)
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function fetchCountryEvData(countryCode) {
   const url = `${DATA_BASE_URL}/data-${countryCode}.js`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-  
+
   const jsText = await res.text();
-  const pattern = new RegExp(
-    String.raw`db\.insert\(\s*db\.countries\.${countryCode}\s*,\s*"([^"]+)"\s*,\s*db\.dsTypes\.(\w+)\s*,\s*"[^"]*"\s*,\s*\{([\s\S]*?)\}\s*\)`,
-    "g"
-  );
+
+  // Build the regex safely (no String.raw, escape the code)
+  const patternStr =
+    'db\\.insert\\(\\s*db\\.countries\\.' + escapeRegExp(countryCode) +
+    '\\s*,\\s*"([^"]+)"\\s*,\\s*db\\.dsTypes\\.(\\w+)' +
+    '\\s*,\\s*"[^"]*"\\s*,\\s*\\{([\\s\\S]*?)\\}\\s*\\)';
+  const pattern = new RegExp(patternStr, 'g');
 
   const periods = {};
   let match;
-  
+
   while ((match = pattern.exec(jsText)) !== null) {
     const period = match[1];
     const dtype = match[2];
     const dataBody = match[3].trim();
 
+    // Reconstruct a JSON-ish object and make it JSON-parseable
     let objStr = "{" + dataBody + "}";
-    objStr = objStr.replace(/\/\/.*$/gm, "");
-    objStr = objStr.replace(/\/\*[\s\S]*?\*\//g, "");
-    objStr = objStr.replace(/,(\s*})/g, "$1");
+    objStr = objStr.replace(/\/\/.*$/gm, "");           // strip line comments
+    objStr = objStr.replace(/\/\*[\s\S]*?\*\//g, "");   // strip block comments
+    objStr = objStr.replace(/,(\s*})/g, "$1");          // trailing commas
 
     let dataObj;
     try {
@@ -398,8 +488,15 @@ async function fetchCountryEvData(countryCode) {
     }
 
     let totalVal = null;
-    if (dtype === "ElectricCarsTotal" || dtype === "ElectricCarsByModel" || dtype === "ElectricCarsByBrand") {
-      totalVal = sumNumericValues(dataObj);
+    if (
+      dtype === "ElectricCarsTotal" ||
+      dtype === "ElectricCarsByModel" ||
+      dtype === "ElectricCarsByBrand"
+    ) {
+      totalVal = Object.values(dataObj).reduce(
+        (acc, v) => (typeof v === "number" ? acc + v : acc),
+        0
+      );
     }
 
     if (totalVal == null) continue;
@@ -410,12 +507,16 @@ async function fetchCountryEvData(countryCode) {
 
   const rows = [];
   for (const [period, perType] of Object.entries(periods)) {
-    let ev = perType.ElectricCarsTotal ?? perType.ElectricCarsByModel ?? perType.ElectricCarsByBrand;
+    const ev =
+      perType.ElectricCarsTotal ??
+      perType.ElectricCarsByModel ??
+      perType.ElectricCarsByBrand;
     if (ev != null) rows.push({ period, ev_sales: ev });
   }
 
   return rows;
 }
+/* ---------------------------------------------------------------- */
 
 function sumNumericValues(obj) {
   return Object.values(obj).reduce((acc, v) => typeof v === "number" ? acc + v : acc, 0);
@@ -436,9 +537,7 @@ function buildPivot(datasets) {
 function getSelectedCountryCodes() {
   const checkboxes = document.querySelectorAll("#country-list input[type=checkbox]");
   const codes = [];
-  checkboxes.forEach((cb) => {
-    if (cb.checked) codes.push(cb.value);
-  });
+  checkboxes.forEach((cb) => { if (cb.checked) codes.push(cb.value); });
   return codes;
 }
 
@@ -454,17 +553,18 @@ function showStatus(message, isError) {
 }
 
 function handleDownloadCSV() {
-  if (!currentPivot || !currentSelectedCodes.length) {
+  const activePivot = getActivePivot();
+  if (!activePivot || !currentSelectedCodes.length) {
     alert("No data to download. Load the chart first.");
     return;
   }
 
-  const periods = Object.keys(currentPivot).sort((a, b) => a.localeCompare(b));
+  const periods = Object.keys(activePivot).sort((a, b) => a.localeCompare(b));
   const header = ["Period", ...currentSelectedCodes.map(getCountryName)];
   const rows = [header];
 
   periods.forEach((period) => {
-    const rowData = currentPivot[period];
+    const rowData = activePivot[period];
     const row = [period];
     currentSelectedCodes.forEach((code) => {
       const val = rowData[code];
@@ -479,7 +579,7 @@ function handleDownloadCSV() {
 
   const a = document.createElement("a");
   a.href = url;
-  a.download = "ev_sales_data.csv";
+  a.download = `ev_sales_data_${yearStart || "all"}-${yearEnd || "all"}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -499,7 +599,7 @@ function handleDownloadImage() {
     return;
   }
   const link = document.createElement("a");
-  link.download = "ev_sales_chart.png";
+  link.download = `ev_sales_chart_${yearStart || "all"}-${yearEnd || "all"}.png`;
   link.href = chartInstance.toBase64Image("image/png", 1);
   document.body.appendChild(link);
   link.click();
