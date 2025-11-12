@@ -1,57 +1,129 @@
-// --- Config ---
+// Base URL for raw data files in the source repo
 const DATA_BASE_URL =
   "https://raw.githubusercontent.com/simonkrauter/Open-EV-Charts/master/data";
 
+// List of countries we expose in the UI (you can extend this)
+const COUNTRY_OPTIONS = [
+  { code: "global", name: "Global" },
+  { code: "US", name: "United States" },
+  { code: "CN", name: "China" },
+  { code: "EU", name: "European Union" },
+  { code: "DE", name: "Germany" },
+  { code: "NO", name: "Norway" },
+  { code: "FR", name: "France" },
+  { code: "UK", name: "United Kingdom" },
+];
+
 let chartInstance = null;
+// Stores the current pivoted data (period × country)
+let currentPivot = null;
+let currentSelectedCodes = [];
 
 document.addEventListener("DOMContentLoaded", () => {
-  const select = document.getElementById("country-select");
-  const button = document.getElementById("load-btn");
+  renderCountryCheckboxes();
 
-  button.addEventListener("click", async () => {
-    const code = select.value;
-    await loadCountry(code);
-  });
+  const loadBtn = document.getElementById("load-btn");
+  const dlCsvBtn = document.getElementById("download-csv-btn");
+  const dlImgBtn = document.getElementById("download-img-btn");
 
-  // load default
-  loadCountry(select.value);
+  loadBtn.addEventListener("click", handleUpdateChart);
+  dlCsvBtn.addEventListener("click", handleDownloadCSV);
+  dlImgBtn.addEventListener("click", handleDownloadImage);
+
+  // Load a default selection (e.g. Global + US)
+  setInitialSelection(["global", "US"]);
+  handleUpdateChart();
 });
 
-async function loadCountry(countryCode) {
+function renderCountryCheckboxes() {
+  const container = document.getElementById("country-list");
+  container.innerHTML = "";
+
+  COUNTRY_OPTIONS.forEach((c) => {
+    const label = document.createElement("label");
+    label.className = "country-chip";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = c.code;
+
+    const span = document.createElement("span");
+    span.textContent = c.name;
+
+    label.appendChild(input);
+    label.appendChild(span);
+    container.appendChild(label);
+  });
+}
+
+function setInitialSelection(codes) {
+  const checkboxes = document.querySelectorAll("#country-list input[type=checkbox]");
+  checkboxes.forEach((cb) => {
+    cb.checked = codes.includes(cb.value);
+  });
+}
+
+async function handleUpdateChart() {
   const statusEl = document.getElementById("status");
-  const titleEl = document.getElementById("chart-title");
+  const loadBtn = document.getElementById("load-btn");
 
-  statusEl.textContent = "Loading...";
+  const selectedCodes = getSelectedCountryCodes();
+  currentSelectedCodes = selectedCodes;
+
+  if (selectedCodes.length === 0) {
+    statusEl.textContent = "Select at least one country.";
+    return;
+  }
+
+  statusEl.textContent = "Loading data...";
+  loadBtn.disabled = true;
+
   try {
-    const data = await fetchCountryEvData(countryCode);
+    // Fetch in parallel
+    const datasets = await Promise.all(
+      selectedCodes.map(async (code) => {
+        const data = await fetchCountryEvData(code);
+        return { code, data };
+      })
+    );
 
-    if (!data.length) {
-      statusEl.textContent = "No EV data parsed.";
-      updateChart([], [], countryCode);
-      updateTable([]);
-      return;
-    }
+    // Build a pivot: period -> { countryCode: ev_sales }
+    const pivot = buildPivot(datasets);
 
-    // sort by period (simple lexicographic sort)
-    data.sort((a, b) => a.period.localeCompare(b.period));
+    currentPivot = pivot;
 
-    const labels = data.map((d) => d.period);
-    const values = data.map((d) => d.ev_sales);
+    const periods = Object.keys(pivot).sort((a, b) => a.localeCompare(b));
+    const datasetsForChart = selectedCodes.map((code, idx) => {
+      const label = getCountryName(code);
+      const data = periods.map((p) =>
+        pivot[p][code] != null ? pivot[p][code] : null
+      );
+      return {
+        label,
+        data,
+        borderWidth: 2,
+        tension: 0.15,
+        pointRadius: 0,
+      };
+    });
 
-    titleEl.textContent = `EV sales over time – ${countryCode}`;
-    updateChart(labels, values, countryCode);
-    updateTable(data);
+    updateChart(periods, datasetsForChart);
+    updateTable(pivot, selectedCodes);
 
-    statusEl.textContent = `Loaded ${data.length} periods.`;
+    statusEl.textContent = `Loaded ${
+      periods.length
+    } periods for ${selectedCodes.length} country(ies).`;
   } catch (err) {
     console.error(err);
     statusEl.textContent = "Error loading data (see console).";
+  } finally {
+    loadBtn.disabled = false;
   }
 }
 
 /**
- * Fetch and parse a single country data-XX.js
- * countryCode: e.g. "US", "DE", "CN", "global"
+ * Fetch and parse a single country data-XX.js file.
+ * Returns array of { period, ev_sales }.
  */
 async function fetchCountryEvData(countryCode) {
   const url = `${DATA_BASE_URL}/data-${countryCode}.js`;
@@ -61,11 +133,6 @@ async function fetchCountryEvData(countryCode) {
   }
   const jsText = await res.text();
 
-  // Regex to match:
-  // db.insert(db.countries.US, "2017-Q1", db.dsTypes.ElectricCarsTotal, "url",
-  // { "other": 21415 });
-  //
-  // Groups: period, dtype, data body
   const pattern = new RegExp(
     String.raw`db\.insert\(\s*db\.countries\.${countryCode}\s*,\s*` +
       String.raw`"([^"]+)"\s*,\s*` + // period
@@ -83,10 +150,9 @@ async function fetchCountryEvData(countryCode) {
     const dtype = match[2];
     const dataBody = match[3].trim();
 
-    // Reconstruct {...} and make it JSON-friendly
     let objStr = "{" + dataBody + "}";
 
-    // Remove comments, if any
+    // Remove comments
     objStr = objStr.replace(/\/\/.*$/gm, "");
     objStr = objStr.replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -97,14 +163,11 @@ async function fetchCountryEvData(countryCode) {
     try {
       dataObj = JSON.parse(objStr);
     } catch (e) {
-      // If parsing fails for some edge case, skip that record
       console.warn("JSON parse error for", countryCode, period, dtype, e);
       continue;
     }
 
-    // Compute total EVs for relevant types
     let totalVal = null;
-
     if (dtype === "ElectricCarsTotal") {
       totalVal = sumNumericValues(dataObj);
     } else if (
@@ -122,7 +185,6 @@ async function fetchCountryEvData(countryCode) {
     periods[period][dtype] = totalVal;
   }
 
-  // Convert to array of rows
   const rows = [];
   for (const [period, perType] of Object.entries(periods)) {
     let ev;
@@ -148,8 +210,43 @@ function sumNumericValues(obj) {
   }, 0);
 }
 
-function updateChart(labels, values, countryCode) {
+function buildPivot(datasets) {
+  // datasets: [ { code, data: [{period, ev_sales}, ...] }, ... ]
+  const pivot = {}; // period -> { countryCode: ev_sales }
+
+  datasets.forEach(({ code, data }) => {
+    data.forEach((row) => {
+      const { period, ev_sales } = row;
+      if (!pivot[period]) {
+        pivot[period] = {};
+      }
+      pivot[period][code] = ev_sales;
+    });
+  });
+
+  return pivot;
+}
+
+function updateChart(labels, datasets) {
   const ctx = document.getElementById("evChart").getContext("2d");
+
+  // Generate a simple color palette
+  const colors = [
+    "#3b82f6",
+    "#22c55e",
+    "#eab308",
+    "#f97316",
+    "#ef4444",
+    "#a855f7",
+    "#14b8a6",
+    "#ec4899",
+  ];
+
+  datasets.forEach((ds, idx) => {
+    const color = colors[idx % colors.length];
+    ds.borderColor = color;
+    ds.backgroundColor = color + "33"; // translucent fill
+  });
 
   if (chartInstance) {
     chartInstance.destroy();
@@ -159,28 +256,33 @@ function updateChart(labels, values, countryCode) {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: `EV sales (${countryCode})`,
-          data: values,
-          borderWidth: 2,
-          tension: 0.15,
-          pointRadius: 0,
-        },
-      ],
+      datasets,
     },
     options: {
       responsive: true,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
       plugins: {
         legend: {
           labels: {
             color: "#e5e7eb",
           },
         },
+        tooltip: {
+          callbacks: {
+            label: function (ctx) {
+              const v = ctx.parsed.y;
+              if (v == null) return `${ctx.dataset.label}: n/a`;
+              return `${ctx.dataset.label}: ${v.toLocaleString("en-US")}`;
+            },
+          },
+        },
       },
       scales: {
         x: {
-          ticks: { color: "#9ca3af" },
+          ticks: { color: "#9ca3af", maxRotation: 60, minRotation: 30 },
           grid: { color: "#111827" },
         },
         y: {
@@ -190,19 +292,125 @@ function updateChart(labels, values, countryCode) {
       },
     },
   });
+
+  const titleEl = document.getElementById("chart-title");
+  const names = currentSelectedCodes.map(getCountryName).join(", ");
+  titleEl.textContent = `EV sales over time – ${names}`;
 }
 
-function updateTable(rows) {
+function updateTable(pivot, selectedCodes) {
+  const thead = document.querySelector("#data-table thead");
   const tbody = document.querySelector("#data-table tbody");
+  thead.innerHTML = "";
   tbody.innerHTML = "";
-  for (const row of rows) {
+
+  const periods = Object.keys(pivot).sort((a, b) => a.localeCompare(b));
+
+  // Header row
+  const headerRow = document.createElement("tr");
+  const thPeriod = document.createElement("th");
+  thPeriod.textContent = "Period";
+  headerRow.appendChild(thPeriod);
+
+  selectedCodes.forEach((code) => {
+    const th = document.createElement("th");
+    th.textContent = getCountryName(code);
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  // Data rows
+  periods.forEach((period) => {
+    const rowData = pivot[period];
     const tr = document.createElement("tr");
+
     const tdPeriod = document.createElement("td");
-    const tdVal = document.createElement("td");
-    tdPeriod.textContent = row.period;
-    tdVal.textContent = row.ev_sales.toLocaleString("en-US");
+    tdPeriod.textContent = period;
     tr.appendChild(tdPeriod);
-    tr.appendChild(tdVal);
+
+    selectedCodes.forEach((code) => {
+      const td = document.createElement("td");
+      const val = rowData[code];
+      td.textContent =
+        val != null ? val.toLocaleString("en-US") : "–";
+      tr.appendChild(td);
+    });
+
     tbody.appendChild(tr);
+  });
+}
+
+function getSelectedCountryCodes() {
+  const checkboxes = document.querySelectorAll(
+    "#country-list input[type=checkbox]"
+  );
+  const codes = [];
+  checkboxes.forEach((cb) => {
+    if (cb.checked) codes.push(cb.value);
+  });
+  return codes;
+}
+
+function getCountryName(code) {
+  const found = COUNTRY_OPTIONS.find((c) => c.code === code);
+  return found ? found.name : code;
+}
+
+// --- Downloads ---
+
+function handleDownloadCSV() {
+  if (!currentPivot || !currentSelectedCodes.length) {
+    alert("No data to download. Load the chart first.");
+    return;
   }
+
+  const periods = Object.keys(currentPivot).sort((a, b) => a.localeCompare(b));
+
+  // Build CSV header
+  const header = ["period", ...currentSelectedCodes.map(getCountryName)];
+  const rows = [header];
+
+  periods.forEach((period) => {
+    const rowData = currentPivot[period];
+    const row = [period];
+    currentSelectedCodes.forEach((code) => {
+      const val = rowData[code];
+      row.push(val != null ? String(val) : "");
+    });
+    rows.push(row);
+  });
+
+  const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "ev_sales_current_view.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  if (value == null) return "";
+  const v = String(value);
+  if (/[",\n]/.test(v)) {
+    return `"${v.replace(/"/g, '""')}"`;
+  }
+  return v;
+}
+
+function handleDownloadImage() {
+  if (!chartInstance) {
+    alert("No chart available. Load data first.");
+    return;
+  }
+  const link = document.createElement("a");
+  link.download = "ev_sales_chart.png";
+  link.href = chartInstance.toBase64Image("image/png", 1);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
