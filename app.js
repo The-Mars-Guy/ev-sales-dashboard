@@ -4,13 +4,32 @@ const DATA_BASE_URL =
 // List of countries we expose in the UI (you can extend this)
 const COUNTRY_OPTIONS = [
   { code: "global", name: "Global" },
-  { code: "US", name: "United States" },
+
+  { code: "AT", name: "Austria" },
+  { code: "AU", name: "Australia" },
+  { code: "BE", name: "Belgium" },
+  { code: "BR", name: "Brazil" },
+  { code: "CA", name: "Canada" },
+  { code: "CH", name: "Switzerland" },
   { code: "CN", name: "China" },
-  { code: "EU", name: "European Union" },
   { code: "DE", name: "Germany" },
-  { code: "NO", name: "Norway" },
+  { code: "DK", name: "Denmark" },
+  { code: "ES", name: "Spain" },
+  { code: "EU", name: "European Union" },
+  { code: "FI", name: "Finland" },
   { code: "FR", name: "France" },
+  { code: "IE", name: "Ireland" },
+  { code: "IL", name: "Israel" },
+  { code: "IS", name: "Iceland" },
+  { code: "IT", name: "Italy" },
+  { code: "NL", name: "Netherlands" },
+  { code: "NO", name: "Norway" },
+  { code: "PL", name: "Poland" },
+  { code: "PT", name: "Portugal" },
+  { code: "SE", name: "Sweden" },
+  { code: "TR", name: "Turkey" },
   { code: "UK", name: "United Kingdom" },
+  { code: "US", name: "United States" },
 ];
 
 let chartInstance = null;
@@ -413,4 +432,5 @@ function handleDownloadImage() {
   link.click();
   document.body.removeChild(link);
 }
+
 
