@@ -1,4 +1,3 @@
-console.log("EV Dashboard script v2 loaded");
 const DATA_BASE_URL =
   "https://raw.githubusercontent.com/simonkrauter/Open-EV-Charts/master/data";
 
@@ -414,3 +413,4 @@ function handleDownloadImage() {
   link.click();
   document.body.removeChild(link);
 }
+
